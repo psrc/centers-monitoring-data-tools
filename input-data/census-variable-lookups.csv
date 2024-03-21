@@ -1,0 +1,163 @@
+﻿metric,table,variable,label,simple_label,order
+Mode to Work,B08301,1,Total,Total,10
+Mode to Work,B08301,3,Drove Alone,Drove alone,1
+Mode to Work,B08301,4,Carpooled,Carpooled,2
+Mode to Work,B08301,10,Public Transportation (Excluding Taxicab),Transit,3
+Mode to Work,B08301,16,Taxicab,Other,7
+Mode to Work,B08301,17,Motorcycle,Other,8
+Mode to Work,B08301,18,Bicycle,Bike,4
+Mode to Work,B08301,19,Walked,Walk,5
+Mode to Work,B08301,20,Other Means,Other,9
+Mode to Work,B08301,21,Worked At Home,Work from Home,6
+Age,B01001,2,Male,Total,6
+Age,B01001,3,Under 5 Years,Under 17,1
+Age,B01001,4,5 To 9 Years,Under 17,1
+Age,B01001,5,10 To 14 Years,Under 17,1
+Age,B01001,6,15 To 17 Years,Under 17,1
+Age,B01001,7,18 And 19 Years,18 to 34,2
+Age,B01001,8,20 Years,18 to 34,2
+Age,B01001,9,21 Years,18 to 34,2
+Age,B01001,10,22 To 24 Years,18 to 34,2
+Age,B01001,11,25 To 29 Years,18 to 34,2
+Age,B01001,12,30 To 34 Years,18 to 34,2
+Age,B01001,13,35 To 39 Years,35 to 49,3
+Age,B01001,14,40 To 44 Years,35 to 49,3
+Age,B01001,15,45 To 49 Years,35 to 49,3
+Age,B01001,16,50 To 54 Years,50 to 64,4
+Age,B01001,17,55 To 59 Years,50 to 64,4
+Age,B01001,18,60 And 61 Years,50 to 64,4
+Age,B01001,19,62 To 64 Years,50 to 64,4
+Age,B01001,20,65 And 66 Years,65+,5
+Age,B01001,21,67 To 69 Years,65+,5
+Age,B01001,22,70 To 74 Years,65+,5
+Age,B01001,23,75 To 79 Years,65+,5
+Age,B01001,24,80 To 84 Years,65+,5
+Age,B01001,25,85 Years And Over,65+,5
+Age,B01001,26,Female,Total,6
+Age,B01001,27,Under 5 Years,Under 17,1
+Age,B01001,28,5 To 9 Years,Under 17,1
+Age,B01001,29,10 To 14 Years,Under 17,1
+Age,B01001,30,15 To 17 Years,Under 17,1
+Age,B01001,31,18 And 19 Years,18 to 34,2
+Age,B01001,32,20 Years,18 to 34,2
+Age,B01001,33,21 Years,18 to 34,2
+Age,B01001,34,22 To 24 Years,18 to 34,2
+Age,B01001,35,25 To 29 Years,18 to 34,2
+Age,B01001,36,30 To 34 Years,18 to 34,2
+Age,B01001,37,35 To 39 Years,35 to 49,3
+Age,B01001,38,40 To 44 Years,35 to 49,3
+Age,B01001,39,45 To 49 Years,35 to 49,3
+Age,B01001,40,50 To 54 Years,50 to 64,4
+Age,B01001,41,55 To 59 Years,50 to 64,4
+Age,B01001,42,60 And 61 Years,50 to 64,4
+Age,B01001,43,62 To 64 Years,50 to 64,4
+Age,B01001,44,65 And 66 Years,65+,5
+Age,B01001,45,67 To 69 Years,65+,5
+Age,B01001,46,70 To 74 Years,65+,5
+Age,B01001,47,75 To 79 Years,65+,5
+Age,B01001,48,80 To 84 Years,65+,5
+Age,B01001,49,85 Years And Over,65+,5
+Gender,B01001,1,Total,Total,3
+Gender,B01001,2,Male,Male,2
+Gender,B01001,26,Female,Female,1
+Race,B03002,1,Total,Total,9
+Race,B03002,3,white,white,8
+Race,B03002,4,Black or African American,Black or African American,3
+Race,B03002,5,American Indian and Alaska Native,American Indian and Alaska Native,1
+Race,B03002,6,Asian,Asian,2
+Race,B03002,7,Native Hawaiian and Other Pacific Islander,Native Hawaiian and Other Pacific Islander,4
+Race,B03002,8,Some other race,Other,6
+Race,B03002,9,Two or more races,Other,7
+Race,B03002,12,Hispanic or Latino,Hispanic or Latino,5
+Income,B19001,1,Total,Total,9
+Income,B19001,2,"Less than $10,000","Less than $20,000",1
+Income,B19001,3,"$10,000 to $15,000","Less than $20,000",1
+Income,B19001,4,"$15,000 to $20,000","Less than $20,000",1
+Income,B19001,5,"$20,000 to $25,000","$20,000 to $35,000",2
+Income,B19001,6,"$25,000 to $30,000","$20,000 to $35,000",2
+Income,B19001,7,"$30,000 to $35,000","$20,000 to $35,000",2
+Income,B19001,8,"$35,000 to $40,000","$35,000 to $50,000",3
+Income,B19001,9,"$40,000 to $45,000","$35,000 to $50,000",3
+Income,B19001,10,"$45,000 to $50,000","$35,000 to $50,000",3
+Income,B19001,11,"$50,000 to $60,000","$50,000 to $75,000",4
+Income,B19001,12,"$60,000 to $70,000","$50,000 to $75,000",4
+Income,B19001,13,"$75,000 to $100,000","$75,000 to $100,000",5
+Income,B19001,14,"$100,000 to $125,000","$100,000 to $150,000",6
+Income,B19001,15,"$125,000 to $150,000","$100,000 to $150,000",6
+Income,B19001,16,"$150,000 to $200,000","$150,000 to $200,000",7
+Income,B19001,17,"$200,000 or more","$200,000 or more",8
+Tenure,B25003,1,Total,Total,3
+Tenure,B25003,2,Owner,Owner,1
+Tenure,B25003,3,Renter,Renter,2
+Housing Type,B25024,1,Total,Total,6
+Housing Type,B25024,2,"1, detached",SF detached,1
+Housing Type,B25024,3,"1, attached",Moderate-low density,2
+Housing Type,B25024,4,2,Moderate-low density,2
+Housing Type,B25024,5,3 or 4,Moderate-low density,2
+Housing Type,B25024,6,5 To 9 Years,Moderate-low density,2
+Housing Type,B25024,7,10 to 19,Moderate-high density,3
+Housing Type,B25024,8,20 to 49,High density,4
+Housing Type,B25024,9,50 or more,High density,4
+Housing Type,B25024,10,Mobile Home,Other,5
+Housing Type,B25024,11,"Boat, RV, Van, etc",Other,5
+Renter Cost Burden,B25070,1,Total,Total,5
+Renter Cost Burden,B25070,2,Less than 10%,Not cost burdened (<30%),1
+Renter Cost Burden,B25070,3,10 to 15%,Not cost burdened (<30%),1
+Renter Cost Burden,B25070,4,15 to 20%,Not cost burdened (<30%),1
+Renter Cost Burden,B25070,5,20 to 25%,Not cost burdened (<30%),1
+Renter Cost Burden,B25070,6,25 to 30%,Not cost burdened (<30%),1
+Renter Cost Burden,B25070,7,30 to 35%,Cost burdened (30-49.9%),2
+Renter Cost Burden,B25070,8,35 to 40%,Cost burdened (30-49.9%),2
+Renter Cost Burden,B25070,9,40 to 50%,Cost burdened (30-49.9%),2
+Renter Cost Burden,B25070,10,50% or more,Severely cost burdened (50+%),3
+Renter Cost Burden,B25070,11,Not Computed,Not computed,4
+Owner Cost Burden,B25091,2,Total,Total,5
+Owner Cost Burden,B25091,3,Less than 10%,Not cost burdened (<30%),1
+Owner Cost Burden,B25091,4,10 to 15%,Not cost burdened (<30%),1
+Owner Cost Burden,B25091,5,15 to 20%,Not cost burdened (<30%),1
+Owner Cost Burden,B25091,6,20 to 25%,Not cost burdened (<30%),1
+Owner Cost Burden,B25091,7,25 to 30%,Not cost burdened (<30%),1
+Owner Cost Burden,B25091,8,30 to 35%,Cost burdened (30-49.9%),2
+Owner Cost Burden,B25091,9,35 to 40%,Cost burdened (30-49.9%),2
+Owner Cost Burden,B25091,10,40 to 50%,Cost burdened (30-49.9%),2
+Owner Cost Burden,B25091,11,50% or more,Severely cost burdened (50+%),3
+Owner Cost Burden,B25091,12,Not Computed,Not computed,4
+Education,B15002,1,Total,Total,7
+Education,B15002,3,No schooling,No high school diploma,1
+Education,B15002,4,Nursery to 4th Grade,No high school diploma,1
+Education,B15002,5,5th and 6th grade,No high school diploma,1
+Education,B15002,6,7th and 8th grade,No high school diploma,1
+Education,B15002,7,9th grade,No high school diploma,1
+Education,B15002,8,10th grade,No high school diploma,1
+Education,B15002,9,11th grade,No high school diploma,1
+Education,B15002,10,"12th grade, no diploma",No high school diploma,1
+Education,B15002,11,High school graduate or equivalent,High school,2
+Education,B15002,12,"Some college, less than a year",Some college,3
+Education,B15002,13,"Some college, more than a year but no degree",Some college,3
+Education,B15002,14,Associates degree,Associate's degree,4
+Education,B15002,15,Bachelor’s degree,Bachelor’s degree,5
+Education,B15002,16,Master's degree,Graduate degree,6
+Education,B15002,17,Professional degree,Graduate degree,6
+Education,B15002,18,Doctorate degree,Graduate degree,6
+Education,B15002,20,No schooling,No high school diploma,1
+Education,B15002,21,Nursery to 4th Grade,No high school diploma,1
+Education,B15002,22,5th and 6th grade,No high school diploma,1
+Education,B15002,23,7th and 8th grade,No high school diploma,1
+Education,B15002,24,9th grade,No high school diploma,1
+Education,B15002,25,10th grade,No high school diploma,1
+Education,B15002,26,11th grade,No high school diploma,1
+Education,B15002,27,"12th grade, no diploma",No high school diploma,1
+Education,B15002,28,High school graduate or equivalent,High school,2
+Education,B15002,29,"Some college, less than a year",Some college,3
+Education,B15002,30,"Some college, more than a year but no degree",Some college,3
+Education,B15002,31,Associates degree,Associate's degree,4
+Education,B15002,32,Bachelor’s degree,Bachelor’s degree,5
+Education,B15002,33,Master's degree,Graduate degree,6
+Education,B15002,34,Professional degree,Graduate degree,6
+Education,B15002,35,Doctorate degree,Graduate degree,6
+Household Type,B11001,1,Total,Total,5
+Household Type,B11001,3,Married Couple,Married Couple,1
+Household Type,B11001,5,"Male householder, no wife present","Family, no Spouse",2
+Household Type,B11001,6,"Female householder, no husband present","Family, no Spouse",2
+Household Type,B11001,8,Householder living alone,Lives Alone,3
+Household Type,B11001,9,Householder not living alone,Lives with Roomate,4
