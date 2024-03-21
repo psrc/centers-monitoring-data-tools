@@ -160,7 +160,55 @@ process_acs_data_for_centers <-function(variable_lookup = "census-variable-looku
   
 }
 
-create_summary_spreadsheet <- function(summary_data, acs_metric_ids) {
+create_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_ids, census_metric) {
+  
+  # Get Census Table 
+  census_tbl <- read_csv("input-data/census-variable-lookups.csv", show_col_types = FALSE) |> filter(metric == census_metric) |> select("table") |> distinct() |> pull()
+  
+  # Determine Years
+  min_yr <- unique(min_yr_data$year)
+  max_yr <- unique(max_yr_data$year)
+  yrs <- c(min_yr, max_yr)
+  
+  # Number of Rows
+  num_rows <- min_yr_data |> select("name") |> pull() |> length()
+  num_cols <- min_yr_data |> filter(name == "Regional Growth Centers") |> select(-"year") |> pivot_longer(!name, names_to = "variables") |> select("variables") |> pull() |> length()+1
+  
+  # Determine the Number of Columns of Output
+  vars <- min_yr_data |>
+    select(-"year") |>
+    pivot_longer(!name, names_to = "variables") |>
+    select("variables") |>
+    mutate(variables = str_remove_all(variables, "estimate: ")) |>
+    mutate(variables = str_remove_all(variables, "share_moe: ")) |>
+    mutate(variables = str_remove_all(variables, "moe: ")) |>
+    mutate(variables = str_remove_all(variables, "share: ")) |>
+    distinct() |>
+    pull()
+  
+  num_vars <- length(vars)
+  
+  title_row_2 <- c("Geography", rep(c("Estimate", "MoE", "Share", "Share MoE"), num_vars))
+  
+  # List of Columns containing numbers
+  estimate_columns <- c(2)
+  moe_columns <- c(3)
+  for(n in 1:(num_vars-1)) {
+    estimate_columns<- append(estimate_columns,2+(4*n))
+    moe_columns<- append(moe_columns,3+(4*n))
+  }
+  
+  numeric_columns<- c(estimate_columns, moe_columns)
+  
+  # List of Columns containing percentages
+  estimate_columns <- c(4)
+  moe_columns <- c(5)
+  for(n in 1:(num_vars-1)) {
+    estimate_columns<- append(estimate_columns,4+(4*n))
+    moe_columns<- append(moe_columns,5+(4*n))
+  }
+  
+  percent_columns<- c(estimate_columns, moe_columns)
   
   # Basics of output Spreadsheet
   hs <- createStyle(
@@ -180,6 +228,16 @@ create_summary_spreadsheet <- function(summary_data, acs_metric_ids) {
     valign = "center",
   )
   
+  # Styles for Center Names
+  rs <- createStyle(textDecoration = "bold", indent = 0)
+  cos <- createStyle(indent = 1)
+  cns <- createStyle(indent = 2)
+  
+  # Styles for Columns
+  pct_fmt <- createStyle(numFmt = "0.0%", halign = "center")
+  num_fmt <- createStyle(numFmt = "#,##0", halign = "center")
+  centerStyle <- createStyle(halign = "center")
+  
   table_idx <- 1
   sheet_idx <- 2
   
@@ -187,69 +245,231 @@ create_summary_spreadsheet <- function(summary_data, acs_metric_ids) {
   analysis_years <- paste(pre_api_year, api_years, sep = ",")
   
   # Set Font Style
-  addStyle(wb = wb, sheet = "Data Notes", style = ns, rows = 1:2, cols = 2)
+  addStyle(wb = wb, sheet = "Notes", style = ns, rows = 1:4, cols = 2)
   
   writeData(
     wb = wb,
-    sheet = "Data Notes",
+    sheet = "Notes",
     x = analysis_years,
     xy = c(2,1))
   
   writeData(
     wb = wb,
-    sheet = "Data Notes",
+    sheet = "Notes",
     x = Sys.Date(),
     xy = c(2,2))
   
-  for (i in acs_metric_ids) {
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = census_metric,
+    xy = c(2,3))
+  
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = census_tbl,
+    xy = c(2,4))
+  
+  for (i in yrs) {
     
-    tbl <- summary_data
+    ifelse(i == min_yr, tbl <- min_yr_data, tbl <- max_yr_data)
     
-    addWorksheet(wb, sheetName = i)
-    writeDataTable(wb, sheet = sheet_idx, x = tbl, tableStyle = "none", headerStyle = hs, withFilter = FALSE)
-    setColWidths(wb, sheet = sheet_idx, cols = 1:length(tbl), widths = "auto")
-    freezePane(wb, sheet = sheet_idx, firstRow = TRUE)
+    tbl <- tbl |> select(-"year")
     
-    if (table_idx < length(acs_metric_ids)) {
-      table_idx <- table_idx + 1
-      sheet_idx <- sheet_idx + 1
+    # Write the Variable Names in Row # 1
+    writeData(
+      wb = wb,
+      sheet = as.character(i),
+      x = "Geography",
+      xy = c(1,1))
+    
+    l = 0
+    for(n in vars) {
       
-    } else {break}
+      writeData(
+        wb = wb,
+        sheet = as.character(i),
+        x = n,
+        xy = c(2+l,1))
+      
+      s <- 2+l
+      e <- s + 3
+      mergeCells(wb, sheet = as.character(i), rows = 1, cols = s:e)
+      addStyle(wb, sheet = as.character(i), centerStyle, rows = 1, cols = s:e)
+      
+      l <- l + 4
+      
+    }
     
+    # Write the Data Headings (Estimate, MoE, Share, Share MoE)
+    for(j in 1:length(title_row_2)) {
+      
+      writeData(
+        wb = wb,
+        sheet = as.character(i),
+        x = title_row_2[[j]],
+        xy = c(j,2))
+      
+    }
+    
+    # Write data without the column headings
+    writeData(
+      wb = wb,
+      sheet = as.character(i),
+      x = tbl,
+      colNames = FALSE,
+      xy = c(1,3))
+    
+    # Merge the Geography Title
+    mergeCells(wb, sheet = as.character(i), rows = 1:2, cols = 1)
+    
+    # Set width for Column #1 to 45
+    setColWidths(wb, sheet = as.character(i), cols = 1:1, widths = 45)
+    
+    # Set all other column widths to 10
+    setColWidths(wb, sheet = as.character(i), cols = 2:length(tbl), widths = 10)
+    
+    # Center Data columns, not the first column
+    for(r in 1:(num_rows+2)) {
+      addStyle(wb, sheet = as.character(i), style=centerStyle, rows = r, cols = 2:num_cols)
+    }
+    
+    # Make Estimate and MoE columns numeric with 1000s seperator
+    for(r in 3:(num_rows+2)) {
+      
+      for(c in numeric_columns) {
+        addStyle(wb, sheet = as.character(i), style=num_fmt, rows = r, cols = c)
+      }
+    }
+    
+    # Make Share and Share MoE columns percentages with 1 decimal place
+    for(r in 3:(num_rows+2)) {
+      
+      for(c in percent_columns) {
+        addStyle(wb, sheet = as.character(i), style=pct_fmt, rows = r, cols = c)
+      }
+    }
+    
+    # Freeze Panes starting with Row 3
+    freezePane(wb, sheet = as.character(i), firstActiveRow = 3)
+    
+    # RGC Region Headings
+    addStyle(wb, sheet = as.character(i), style=rs, rows = 3, cols = 1)
+    
+    # RGC King County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 4, cols = 1)
+    
+    # RGC King County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 5:23, cols = 1)
+    
+    # RGC Kitsap County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 24, cols = 1)
+    
+    # RGC Kitsap County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 25:26, cols = 1)
+    
+    # RGC Pierce County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 27, cols = 1)
+    
+    # RGC Pierce County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 28:33, cols = 1)
+    
+    # RGC Snohomish County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 34, cols = 1)
+    
+    # RGC Snohomomish County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 35:37, cols = 1)
+    
+    # RGC Type Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 38:40, cols = 1)
+    
+    # MIC Region Headings
+    addStyle(wb, sheet = as.character(i), style=rs, rows = 41, cols = 1)
+    
+    # MIC King County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 42, cols = 1)
+    
+    # MIC King County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 43:46, cols = 1)
+    
+    # MIC Kitsap County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 47, cols = 1)
+    
+    # MIC Kitsap County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 48, cols = 1)
+    
+    # MIC Pierce County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 49, cols = 1)
+    
+    # MIC Pierce County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 50:52, cols = 1)
+    
+    # MIC Snohomish County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 53, cols = 1)
+    
+    # MIC Snohomomish County Center Headings
+    addStyle(wb, sheet = as.character(i), style=cns, rows = 54:55, cols = 1)
+    
+    # MIC Type Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 56:58, cols = 1)
+    
+    # Region Headings
+    addStyle(wb, sheet = as.character(i), style=rs, rows = 59, cols = 1)
+    
+    # Region County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 60:63, cols = 1)
+    
+    # UGA Headings
+    addStyle(wb, sheet = as.character(i), style=rs, rows = 64, cols = 1)
+    
+    # UGA County Headings
+    addStyle(wb, sheet = as.character(i), style=cos, rows = 65:68, cols = 1)
+    
+
   }
   
-  saveWorkbook(wb, file = paste0("output-data/acs_data_for_centers_monitoring_metric_", acs_metric_ids, ".xlsx"), overwrite = TRUE)
+  saveWorkbook(wb, file = paste0("output-data/metric_", acs_metric_ids, ".xlsx"), overwrite = TRUE)
 }
 
 summary_table_creation <- function(census_metric, census_data=centers_acs_data) {
   
   print(str_glue("Creating Cleaned table for {census_metric} for final output"))
-  tbl <- census_data |> filter(metric == census_metric & grouping != "Total") |> select(-"metric", -"center_boundary")
+  tbl <- census_data |> filter(metric == census_metric) |> select(-"metric", -"center_boundary")
   output_id <- read_csv("input-data/acs-centers-output-crosswalk.csv", show_col_types = FALSE) |> filter(metric == census_metric) |> select("output_id") |> pull()
   
   # Get unique values to use to create table layout
   yrs <- unique(tbl$year)
   vars <- unique(tbl$grouping)
   
-  final_tbl <- tbl |> select("name") |> distinct() |> arrange(name)
-  for (y in yrs) {
-    for (v in vars) {
-      t <- tbl |>
-        filter(year == y & grouping == v) |>
-        pivot_wider(names_from = grouping, 
-                    values_from = c(estimate, moe, share, share_moe),
-                    names_sep = ": ",
-                    names_sort = FALSE,
-                    names_prefix = paste0(as.character(y)," ")) |>
-        select(-"year") 
-      
-      final_tbl <- left_join(final_tbl, t, by="name") 
-      
-    }
+  min_yr <- min(yrs)
+  max_yr <- max(yrs)
+  yr1 <- tbl |> select("name") |> mutate(year = min_yr) |> distinct() |> arrange(name)
+  yr2 <- tbl |> select("name") |> mutate(year = max_yr) |>distinct() |> arrange(name)
+  for (v in vars) {
+    # Minimum Year
+    t <- tbl |>
+      filter(year == min_yr & grouping == v) |>
+      pivot_wider(names_from = grouping, 
+                  values_from = c(estimate, moe, share, share_moe),
+                  names_sep = ": ",
+                  names_sort = FALSE)
+    
+    yr1 <- left_join(yr1, t, by=c("name", "year")) 
+    
+    # Maximum Year
+    t <- tbl |>
+      filter(year == max_yr & grouping == v) |>
+      pivot_wider(names_from = grouping, 
+                  values_from = c(estimate, moe, share, share_moe),
+                  names_sep = ": ",
+                  names_sort = FALSE)
+    
+    yr2 <- left_join(yr2, t, by=c("name", "year"))
   }
   
   # Create Spreadsheet
-  create_summary_spreadsheet(summary_data = final_tbl, acs_metric_ids = output_id)
+  create_summary_spreadsheet(min_yr_data = yr1, max_yr_data = yr2, acs_metric_ids = output_id, census_metric = census_metric)
 }
 
 generate_blockgroup_splits <- function(y) {
