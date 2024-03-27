@@ -1,33 +1,5 @@
-centers_estimate_from_bg <- function(split_df, estimate_df, center_type, split_type, center_name) {
+# ACS Data for Centers ----------------------------------------------------
   
-  # Filter Blockgroup Splits to Center Name
-  t <- split_df |> 
-    filter(planning_geog_type == center_type & planning_geog == center_name) |>
-    select(year = "ofm_estimate_year", geography = "data_geog", name = "planning_geog", split_share = all_of(split_type)) 
-  
-  d <- estimate_df |> select("year","geography", "grouping", "metric", "estimate", "moe")
-  
-  # Proportion Estimates and MoE for each block group in center by split share and aggreagate to center
-  c <- left_join(t, d, by=c("year", "geography"), relationship = "many-to-many") |>
-    mutate(center_estimate = estimate*split_share, center_moe = moe*split_share) |>
-    group_by(year, name, grouping, metric) |>
-    summarise(estimate = round(sum(center_estimate),0), moe = round(moe_sum(moe=center_moe, estimate=center_estimate),0)) |>
-    as_tibble() |>
-    mutate(center_boundary = center_type)
-  
-  # Calculate Shares of Total Population, Households or Housing Units
-  totals <- c |>
-    filter(grouping == "Total") |>
-    select("name", "year", "metric", total="estimate")
-  
-  c <- left_join(c, totals, by=c("name", "year", "metric")) |>
-    mutate(share = estimate / total, share_moe = moe / total) |>
-    select(-"total")
-  
-  return(c)
-  
-}
-
 process_acs_data_for_centers <-function(variable_lookup = "census-variable-lookups", splits = blockgroup_splits, census_metric, split_variable) {
   
   # Determine Table Name, variables and labels from Variable Lookup
@@ -160,7 +132,444 @@ process_acs_data_for_centers <-function(variable_lookup = "census-variable-looku
   
 }
 
-create_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_ids, census_metric) {
+# Population and Housing Data from OFM ------------------------------------
+process_ofm_data_for_centers <- function(yrs) {
+  
+  centers_population_housing <- NULL
+  for (y in yrs) {
+    
+    # Parcel population
+    print(str_glue("Loading {y} OFM based parcelized estimates of total population"))
+    if (y >= 2020) {ofm_vintage <- y} else {ofm_vintage <- 2020}
+    q <- paste0("SELECT parcel_dim_id, estimate_year, total_pop, housing_units, occupied_housing_units from ofm.parcelized_saep_facts WHERE ofm_vintage = ", ofm_vintage, " AND estimate_year = ", y, "")
+    p <- get_query(sql = q)
+    
+    # Parcel Dimensions
+    if (y >=2018) {parcel_yr <- 2018} else {parcel_yr <- 2014}
+    print(str_glue("Loading {parcel_yr} parcel dimensions from Elmer"))
+    q <- paste0("SELECT parcel_dim_id, parcel_id, county_name, ", rgc_title, ", ",mic_title, ", ",rgeo_title, ", ",hct_title, " from small_areas.parcel_dim WHERE base_year = ", parcel_yr, " ")
+    d <- get_query(sql = q) |> 
+      rename(rgc = all_of(rgc_title), mic = all_of(mic_title), rgeo = all_of(rgeo_title), hct = all_of(hct_title), county="county_name") |>
+      mutate(rgc = str_replace_all(rgc, "Greater Downtown Kirkland", "Kirkland Greater Downtown")) |>
+      mutate(rgc = str_replace_all(rgc, "Not in Center", "Not in a Regional Growth Center")) |>
+      mutate(mic = str_replace_all(mic, "Puget Sound Industrial Center- Bremerton", "Puget Sound Industrial Center - Bremerton")) |>
+      mutate(mic = str_replace_all(mic, "N/A", "Not in a Manufacturing Industrial Centers")) |>
+      mutate(uga = case_when(rgeo != "Rural" ~ "UGA", rgeo == "Rural" ~ "Outside UGA")) |>
+      mutate(rgc_type = case_when(rgc %in% rgc_metro ~ "Metro Growth Centers", rgc %in% rgc_urban ~ "Urban Growth Centers")) |>
+      mutate(rgc_type = replace_na(rgc_type, "Not in a Regional Growth Center")) |>
+      mutate(mic_type = case_when(mic %in% mic_employment ~ "Industrial Employment Centers", mic %in% mic_growth ~ "Industrial Growth Centers")) |>
+      mutate(mic_type = replace_na(mic_type, "Not in a Manufacturing Industrial Centers"))
+    
+    # Add MIC and RGC names to Parcels
+    p <- left_join(p, d, by="parcel_dim_id")
+    
+    # RGC summaries
+    rgc_all <- p |>
+      select(name="rgc", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name != "Not in a Regional Growth Center") |>
+      mutate(name= "Regional Growth Centers") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    rgc_individual <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      select(name="rgc", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    rgc_county <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County RGCs",
+        county == "Kitsap" ~ "Kitsap County RGCs",
+        county == "Pierce" ~ "Pierce County RGCs",
+        county == "Snohomish" ~ "Snohomish County RGCs")) |>
+      select("name", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    rgc_type <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      select(name="rgc_type", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    rgc_not <- p |>
+      select(name="rgc", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "Not in a Regional Growth Center") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    # MIC summaries
+    mic_all <- p |>
+      select(name="mic", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name != "Not in a Manufacturing Industrial Centers") |>
+      mutate(name= "Manufacturing Industrial Centers") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    mic_individual <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      select(name="mic", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    mic_county <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County MICs",
+        county == "Kitsap" ~ "Kitsap County MICs",
+        county == "Pierce" ~ "Pierce County MICs",
+        county == "Snohomish" ~ "Snohomish County MICs")) |>
+      select("name", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    mic_type <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      select(name="mic_type", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    mic_not <- p |>
+      select(name="mic", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "Not in a Manufacturing Industrial Centers") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()  
+    
+    # Region summaries
+    region_all <- p |>
+      select(name="mic", "total_pop", "housing_units", "occupied_housing_units") |>
+      mutate(name= "Region Total") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    region_county <- p |>
+      mutate(name = case_when(
+        county == "King" ~ "King County Total",
+        county == "Kitsap" ~ "Kitsap County Total",
+        county == "Pierce" ~ "Pierce County Total",
+        county == "Snohomish" ~ "Snohomish County Total")) |>
+      select("name", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    # UGA summaries
+    uga_all <- p |>
+      select(name="uga", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "UGA") |>
+      mutate(name= "UGA Total") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    uga_county <- p |>
+      filter(uga == "UGA") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County UGA",
+        county == "Kitsap" ~ "Kitsap County UGA",
+        county == "Pierce" ~ "Pierce County UGA",
+        county == "Snohomish" ~ "Snohomish County UGA")) |>
+      select("name", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()
+    
+    tbl <- bind_rows(rgc_all, rgc_individual, rgc_county, rgc_type, rgc_not,
+                     mic_all, mic_individual, mic_county, mic_type, mic_not,
+                     region_all, region_county,
+                     uga_all, uga_county) |> 
+      mutate(name = factor(name, levels = all_names)) |> 
+      mutate(year = y) |>
+      arrange(name)
+    
+    if (is.null(centers_population_housing)) {centers_population_housing <- tbl} else {centers_population_housing <- bind_rows(centers_population_housing, tbl)}
+    
+  }
+  
+  print(str_glue("Formatting Table for Excel table output"))
+  final_tbl <- centers_population_housing |>
+    pivot_wider(names_from = year, values_from = c(population, housing_units, households)) |>
+    mutate(population_change = .data[[paste0("population_",max(yrs))]] - .data[[paste0("population_",min(yrs))]]) |>
+    mutate(housing_units_change = .data[[paste0("housing_units_",max(yrs))]] - .data[[paste0("housing_units_",min(yrs))]]) |>
+    mutate(households_change = .data[[paste0("households_",max(yrs))]] - .data[[paste0("households_",min(yrs))]]) |>
+    mutate(population_percent_change = (.data[[paste0("population_",max(yrs))]] - .data[[paste0("population_",min(yrs))]])/.data[[paste0("population_",min(yrs))]]) |>
+    mutate(housing_units_percent_change = (.data[[paste0("housing_units_",max(yrs))]] - .data[[paste0("housing_units_",min(yrs))]])/.data[[paste0("housing_units_",min(yrs))]]) |>
+    mutate(households_percent_change = (.data[[paste0("households_",max(yrs))]] - .data[[paste0("households_",min(yrs))]])/.data[[paste0("households_",max(yrs))]]) |>
+    select("name", 
+           all_of(paste0("population_",min(yrs))), all_of(paste0("population_",max(yrs))), "population_change", "population_percent_change",
+           all_of(paste0("housing_units_",min(yrs))), all_of(paste0("housing_units_",max(yrs))), "housing_units_change", "housing_units_percent_change",
+           all_of(paste0("households_",min(yrs))), all_of(paste0("households_",max(yrs))), "households_change", "households_percent_change")
+  
+  return(final_tbl)
+  
+}
+
+process_ofm_hct_data_for_centers <- function(yrs) {
+  
+  centers_population_housing <- NULL
+  for (y in yrs) {
+    
+    # Parcel population
+    print(str_glue("Loading {y} OFM based parcelized estimates of total population"))
+    if (y >= 2020) {ofm_vintage <- y} else {ofm_vintage <- 2020}
+    q <- paste0("SELECT parcel_dim_id, estimate_year, total_pop, housing_units, occupied_housing_units from ofm.parcelized_saep_facts WHERE ofm_vintage = ", ofm_vintage, " AND estimate_year = ", y, "")
+    p <- get_query(sql = q)
+    
+    # Parcel Dimensions
+    if (y >=2018) {parcel_yr <- 2018} else {parcel_yr <- 2014}
+    print(str_glue("Loading {parcel_yr} parcel dimensions from Elmer"))
+    q <- paste0("SELECT parcel_dim_id, parcel_id, county_name, ", rgc_title, ", ",mic_title, ", ",rgeo_title, ", ",hct_title, " from small_areas.parcel_dim WHERE base_year = ", parcel_yr, " ")
+    d <- get_query(sql = q) |> 
+      rename(rgc = all_of(rgc_title), mic = all_of(mic_title), rgeo = all_of(rgeo_title), hct = all_of(hct_title), county="county_name") |>
+      mutate(rgc = str_replace_all(rgc, "Greater Downtown Kirkland", "Kirkland Greater Downtown")) |>
+      mutate(rgc = str_replace_all(rgc, "Not in Center", "Not in a Regional Growth Center")) |>
+      mutate(mic = str_replace_all(mic, "Puget Sound Industrial Center- Bremerton", "Puget Sound Industrial Center - Bremerton")) |>
+      mutate(mic = str_replace_all(mic, "N/A", "Not in a Manufacturing Industrial Centers")) |>
+      mutate(uga = case_when(rgeo != "Rural" ~ "UGA", rgeo == "Rural" ~ "Outside UGA")) |>
+      mutate(rgc_type = case_when(rgc %in% rgc_metro ~ "Metro Growth Centers", rgc %in% rgc_urban ~ "Urban Growth Centers")) |>
+      mutate(rgc_type = replace_na(rgc_type, "Not in a Regional Growth Center")) |>
+      mutate(mic_type = case_when(mic %in% mic_employment ~ "Industrial Employment Centers", mic %in% mic_growth ~ "Industrial Growth Centers")) |>
+      mutate(mic_type = replace_na(mic_type, "Not in a Manufacturing Industrial Centers"))
+    
+    # Add MIC and RGC names to Parcels
+    p <- left_join(p, d, by="parcel_dim_id")
+    
+    # RGC summaries
+    rgc_all <- p |>
+      select(name="rgc", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name != "Not in a Regional Growth Center") |>
+      mutate(name= "Regional Growth Centers") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    rgc_individual <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      select(name="rgc", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    rgc_county <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County RGCs",
+        county == "Kitsap" ~ "Kitsap County RGCs",
+        county == "Pierce" ~ "Pierce County RGCs",
+        county == "Snohomish" ~ "Snohomish County RGCs")) |>
+      select("name", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble()|>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    rgc_type <- p |>
+      filter(rgc != "Not in a Regional Growth Center") |>
+      select(name="rgc_type", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    rgc_not <- p |>
+      select(name="rgc", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "Not in a Regional Growth Center") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    # MIC summaries
+    mic_all <- p |>
+      select(name="mic", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name != "Not in a Manufacturing Industrial Centers") |>
+      mutate(name= "Manufacturing Industrial Centers") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    mic_individual <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      select(name="mic", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    mic_county <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County MICs",
+        county == "Kitsap" ~ "Kitsap County MICs",
+        county == "Pierce" ~ "Pierce County MICs",
+        county == "Snohomish" ~ "Snohomish County MICs")) |>
+      select("name", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    mic_type <- p |>
+      filter(mic != "Not in a Manufacturing Industrial Centers") |>
+      select(name="mic_type", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    mic_not <- p |>
+      select(name="mic", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "Not in a Manufacturing Industrial Centers") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))   
+    
+    # Region summaries
+    region_all <- p |>
+      select(name="mic", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      mutate(name= "Region Total") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households)) 
+    
+    region_county <- p |>
+      mutate(name = case_when(
+        county == "King" ~ "King County Total",
+        county == "Kitsap" ~ "Kitsap County Total",
+        county == "Pierce" ~ "Pierce County Total",
+        county == "Snohomish" ~ "Snohomish County Total")) |>
+      select("name", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households)) 
+    
+    # UGA summaries
+    uga_all <- p |>
+      select(name="uga", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      filter(name == "UGA") |>
+      mutate(name= "UGA Total") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    uga_county <- p |>
+      filter(uga == "UGA") |>
+      mutate(name = case_when(
+        county == "King" ~ "King County UGA",
+        county == "Kitsap" ~ "Kitsap County UGA",
+        county == "Pierce" ~ "Pierce County UGA",
+        county == "Snohomish" ~ "Snohomish County UGA")) |>
+      select("name", "hct", "total_pop", "housing_units", "occupied_housing_units") |>
+      group_by(name, hct) |>
+      summarise(population = round(sum(total_pop),-1), housing_units = round(sum(housing_units),-1), households = round(sum(occupied_housing_units),-1)) |>
+      as_tibble() |>
+      pivot_wider(names_from = hct, values_from = c(population, housing_units, households))
+    
+    tbl <- bind_rows(rgc_all, rgc_individual, rgc_county, rgc_type, rgc_not,
+                     mic_all, mic_individual, mic_county, mic_type, mic_not,
+                     region_all, region_county,
+                     uga_all, uga_county) |> 
+      mutate(name = factor(name, levels = all_names)) |> 
+      mutate(year = y) |>
+      arrange(name) |>
+      mutate(`population_in station area` = replace_na(`population_in station area`, 0)) |>
+      mutate(`population_not in station area` = replace_na(`population_not in station area`, 0)) |>
+      mutate(`housing_units_in station area` = replace_na(`housing_units_in station area`, 0)) |>
+      mutate(`housing_units_not in station area` = replace_na(`housing_units_not in station area`, 0)) |>
+      mutate(`households_in station area` = replace_na(`households_in station area`, 0)) |>
+      mutate(`households_not in station area` = replace_na(`households_not in station area`, 0)) |>
+      mutate(total_population = `population_in station area` + `population_not in station area`) |>
+      mutate(total_housing_units = `housing_units_in station area` + `housing_units_not in station area`) |>
+      mutate(total_households = `households_in station area` + `households_not in station area`) |>
+      mutate(hct_population_share = `population_in station area` / total_population) |>
+      mutate(hct_housing_units_share = `housing_units_in station area` / total_housing_units) |>
+      mutate(hct_households_share = `households_in station area` / total_households) |>
+      select("name", 
+             "population_in station area", "total_population", "hct_population_share",
+             "housing_units_in station area", "total_housing_units", "hct_housing_units_share",
+             "households_in station area", "total_households", "hct_households_share",
+             "year")
+    
+    if (is.null(centers_population_housing)) {centers_population_housing <- tbl} else {centers_population_housing <- bind_rows(centers_population_housing, tbl)}
+    
+  }
+  
+  print(str_glue("Formatting Table for Excel table output"))
+  final_pop <- centers_population_housing |>
+    select("name", contains("population"), "year") |>
+    rename(hct = "population_in station area", total = "total_population", hct_share = "hct_population_share") |>
+    mutate(hct_share = replace_na(hct_share, 0)) |>
+    pivot_wider(names_from = year, values_from = c(hct, total, hct_share)) |>
+    mutate(hct_change = .data[[paste0("hct_",as.character(max(yrs)))]] - .data[[paste0("hct_",as.character(min(yrs)))]]) |>
+    mutate(total_change = .data[[paste0("total_",as.character(max(yrs)))]] - .data[[paste0("total_",as.character(min(yrs)))]]) |>
+    mutate(hct_share_change = hct_change / total_change) |>
+    mutate(hct_share_change = replace_na(hct_share_change, 0)) |>
+    select("name",
+           all_of(paste0("hct_",as.character(min(yrs)))), all_of(paste0("total_",as.character(min(yrs)))), all_of(paste0("hct_share_",as.character(min(yrs)))),
+           all_of(paste0("hct_",as.character(max(yrs)))), all_of(paste0("total_",as.character(max(yrs)))), all_of(paste0("hct_share_",as.character(max(yrs)))),
+           "hct_change", "total_change", "hct_share_change") |>
+    mutate(metric = "Population")
+  
+  final_hu <- centers_population_housing |>
+    select("name", contains("housing_units"), "year") |>
+    rename(hct = "housing_units_in station area", total = "total_housing_units", hct_share = "hct_housing_units_share") |>
+    mutate(hct_share = replace_na(hct_share, 0)) |>
+    pivot_wider(names_from = year, values_from = c(hct, total, hct_share)) |>
+    mutate(hct_change = .data[[paste0("hct_",as.character(max(yrs)))]] - .data[[paste0("hct_",as.character(min(yrs)))]]) |>
+    mutate(total_change = .data[[paste0("total_",as.character(max(yrs)))]] - .data[[paste0("total_",as.character(min(yrs)))]]) |>
+    mutate(hct_share_change = hct_change / total_change) |>
+    mutate(hct_share_change = replace_na(hct_share_change, 0)) |>
+    select("name",
+           all_of(paste0("hct_",as.character(min(yrs)))), all_of(paste0("total_",as.character(min(yrs)))), all_of(paste0("hct_share_",as.character(min(yrs)))),
+           all_of(paste0("hct_",as.character(max(yrs)))), all_of(paste0("total_",as.character(max(yrs)))), all_of(paste0("hct_share_",as.character(max(yrs)))),
+           "hct_change", "total_change", "hct_share_change") |>
+    mutate(metric = "Housing Units")
+  
+  final_hh <- centers_population_housing |>
+    select("name", contains("households"), "year") |>
+    rename(hct = "households_in station area", total = "total_households", hct_share = "hct_households_share") |>
+    mutate(hct_share = replace_na(hct_share, 0)) |>
+    pivot_wider(names_from = year, values_from = c(hct, total, hct_share)) |>
+    mutate(hct_change = .data[[paste0("hct_",as.character(max(yrs)))]] - .data[[paste0("hct_",as.character(min(yrs)))]]) |>
+    mutate(total_change = .data[[paste0("total_",as.character(max(yrs)))]] - .data[[paste0("total_",as.character(min(yrs)))]]) |>
+    mutate(hct_share_change = hct_change / total_change) |>
+    mutate(hct_share_change = replace_na(hct_share_change, 0)) |>
+    select("name",
+           all_of(paste0("hct_",as.character(min(yrs)))), all_of(paste0("total_",as.character(min(yrs)))), all_of(paste0("hct_share_",as.character(min(yrs)))),
+           all_of(paste0("hct_",as.character(max(yrs)))), all_of(paste0("total_",as.character(max(yrs)))), all_of(paste0("hct_share_",as.character(max(yrs)))),
+           "hct_change", "total_change", "hct_share_change") |>
+    mutate(metric = "Households") 
+  
+  final_tbl <- bind_rows(final_pop, final_hu, final_hh) 
+  
+  return(final_tbl)
+
+}
+
+
+
+# Summary Workbooks -------------------------------------------------------
+create_acs_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_ids, census_metric) {
   
   # Get Census Table 
   census_tbl <- read_csv("input-data/census-variable-lookups.csv", show_col_types = FALSE) |> filter(metric == census_metric) |> select("table") |> distinct() |> pull()
@@ -241,7 +650,7 @@ create_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_ids,
   table_idx <- 1
   sheet_idx <- 2
   
-  wb <- loadWorkbook("input-data/metadata.xlsx")
+  wb <- loadWorkbook("input-data/acs_metadata.xlsx")
   analysis_years <- paste(pre_api_year, api_years, sep = ",")
   
   # Set Font Style
@@ -432,7 +841,7 @@ create_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_ids,
   saveWorkbook(wb, file = paste0("output-data/metric_", acs_metric_ids, ".xlsx"), overwrite = TRUE)
 }
 
-summary_table_creation <- function(census_metric, census_data=centers_acs_data) {
+acs_summary_table_creation <- function(census_metric, census_data=centers_acs_data) {
   
   print(str_glue("Creating Cleaned table for {census_metric} for final output"))
   tbl <- census_data |> filter(metric == census_metric) |> select(-"metric", -"center_boundary")
@@ -469,8 +878,389 @@ summary_table_creation <- function(census_metric, census_data=centers_acs_data) 
   }
   
   # Create Spreadsheet
-  create_summary_spreadsheet(min_yr_data = yr1, max_yr_data = yr2, acs_metric_ids = output_id, census_metric = census_metric)
+  create_acs_summary_spreadsheet(min_yr_data = yr1, max_yr_data = yr2, acs_metric_ids = output_id, census_metric = census_metric)
 }
+
+create_ofm_summary_spreadsheet <- function(tbl, metric_ids) {
+  
+  # Determine Years
+  min_yr <- min(ofm_years)
+  max_yr <- max(ofm_years)
+  
+  # Number of Rows and columns
+  num_rows <- tbl |> select("name") |> pull() |> length()
+  num_cols <- tbl |> filter(name == "Regional Growth Centers") |> pivot_longer(!name, names_to = "variables") |> select("variables") |> pull() |> length()+1
+  
+  title_row <- c(rep(c(as.character(min_yr), as.character(max_yr), "Change", "% Change"), 3))
+  
+  # List of Columns containing numbers
+  numeric_columns<- c(2,3,4,6,7,8,10,11,12)
+  percent_columns<- c(5,9,13)
+  
+  # Basics of output Spreadsheet
+  hs <- createStyle(
+    fontColour = "black",
+    border = "bottom",
+    fgFill = "#00a7a0",
+    halign = "center",
+    valign = "center",
+    textDecoration = "bold"
+  )
+  
+  ns <- createStyle(
+    fontName = "Poppins",
+    fontColour = "black",
+    fontSize = 11,
+    halign = "left",
+    valign = "center",
+  )
+  
+  # Styles for Center Names
+  rs <- createStyle(textDecoration = "bold", indent = 0)
+  cos <- createStyle(indent = 1)
+  cns <- createStyle(indent = 2)
+  
+  # Styles for Columns
+  pct_fmt <- createStyle(numFmt = "0%", halign = "center")
+  num_fmt <- createStyle(numFmt = "#,##0", halign = "center")
+  centerStyle <- createStyle(halign = "center")
+  
+  wb <- loadWorkbook("input-data/population_metadata.xlsx")
+  analysis_years <- paste(min_yr, max_yr, sep = ",")
+  
+  # Set Font Style
+  addStyle(wb = wb, sheet = "Notes", style = ns, rows = 1:2, cols = 2)
+  
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = analysis_years,
+    xy = c(2,1))
+  
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = Sys.Date(),
+    xy = c(2,2))
+  
+  # Write the Variable Names in Row # 1
+  writeData(wb, sheet = "Data", x = "Geography", xy = c(1,1))
+  writeData(wb, sheet = "Data", x = "Population", xy = c(2,1))
+  mergeCells(wb, sheet = "Data", rows = 1, cols = 2:5)
+  writeData(wb, sheet = "Data", x = "Housing Units", xy = c(6,1))
+  mergeCells(wb, sheet = "Data", rows = 1, cols = 6:9)
+  writeData(wb, sheet = "Data", x = "Households", xy = c(10,1))
+  mergeCells(wb, sheet = "Data", rows = 1, cols = 10:13)
+  writeData(wb, sheet = "Data", x = "Households", xy = c(10,1))
+  
+  # Write the Data Headings (Estimate, MoE, Share, Share MoE)
+  for(j in 1:length(title_row)) {
+    writeData(wb, sheet = "Data", x = title_row[[j]], xy = c(j+1,2))
+  }
+  
+  # Write data without the column headings
+  writeData(wb, sheet = "Data", x = tbl, colNames = FALSE, xy = c(1,3))
+  
+  # Merge the Geography Title
+  mergeCells(wb, sheet = "Data", rows = 1:2, cols = 1)
+  
+  # Set width for Column #1 to 45
+  setColWidths(wb, sheet = "Data", cols = 1:1, widths = 45)
+  
+  # Set all other column widths to 10
+  setColWidths(wb, sheet = "Data", cols = 2:length(tbl), widths = 10)
+  
+  # Center Data columns, not the first column
+  for(r in 1:(num_rows+2)) {
+    addStyle(wb, sheet = "Data", style=centerStyle, rows = r, cols = 2:num_cols)
+  }
+  
+  # Make Estimate and MoE columns numeric with 1000s seperator
+  for(r in 3:(num_rows+2)) {
+    for(c in numeric_columns) {
+      addStyle(wb, sheet = "Data", style=num_fmt, rows = r, cols = c)
+    }
+  }
+  
+  # Make Share and Share MoE columns percentages with 1 decimal place
+  for(r in 3:(num_rows+2)) {
+    for(c in percent_columns) {
+      addStyle(wb, sheet = "Data", style=pct_fmt, rows = r, cols = c)
+    }
+  }
+  
+  # Freeze Panes starting with Row 3
+  freezePane(wb, sheet = "Data", firstActiveRow = 3)
+  
+  # RGC Region Headings
+  addStyle(wb, sheet = "Data", style=rs, rows = 3, cols = 1)
+  
+  # RGC King County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 4, cols = 1)
+  
+  # RGC King County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 5:23, cols = 1)
+  
+  # RGC Kitsap County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 24, cols = 1)
+  
+  # RGC Kitsap County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 25:26, cols = 1)
+  
+  # RGC Pierce County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 27, cols = 1)
+  
+  # RGC Pierce County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 28:33, cols = 1)
+  
+  # RGC Snohomish County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 34, cols = 1)
+  
+  # RGC Snohomomish County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 35:37, cols = 1)
+  
+  # RGC Type Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 38:40, cols = 1)
+  
+  # MIC Region Headings
+  addStyle(wb, sheet = "Data", style=rs, rows = 41, cols = 1)
+  
+  # MIC King County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 42, cols = 1)
+  
+  # MIC King County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 43:46, cols = 1)
+  
+  # MIC Kitsap County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 47, cols = 1)
+  
+  # MIC Kitsap County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 48, cols = 1)
+  
+  # MIC Pierce County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 49, cols = 1)
+  
+  # MIC Pierce County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 50:52, cols = 1)
+  
+  # MIC Snohomish County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 53, cols = 1)
+  
+  # MIC Snohomomish County Center Headings
+  addStyle(wb, sheet = "Data", style=cns, rows = 54:55, cols = 1)
+  
+  # MIC Type Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 56:58, cols = 1)
+  
+  # Region Headings
+  addStyle(wb, sheet = "Data", style=rs, rows = 59, cols = 1)
+  
+  # Region County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 60:63, cols = 1)
+  
+  # UGA Headings
+  addStyle(wb, sheet = "Data", style=rs, rows = 64, cols = 1)
+  
+  # UGA County Headings
+  addStyle(wb, sheet = "Data", style=cos, rows = 65:68, cols = 1)
+  
+  # Write fina workbook
+  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, ".xlsx"), overwrite = TRUE)
+  
+}
+
+create_ofm_hct_summary_spreadsheet <- function(tbl, metric_ids, metrics=c("Population", "Housing Units", "Households")) {
+  
+  # Determine Years
+  min_yr <- min(ofm_years)
+  max_yr <- max(ofm_years)
+  
+  # Number of Rows and columns
+  num_rows <- tbl |> filter(metric == "Population") |> select("name") |> pull() |> length()
+  num_cols <- tbl |> filter(name == "Regional Growth Centers" & metric == "Population") |> select(-"metric") |> pivot_longer(!name, names_to = "variables") |> select("variables") |> pull() |> length()+1
+  
+  title_row <- c(rep(c("HCT", "Total", "Share"), 3))
+  
+  # List of Columns containing numbers
+  numeric_columns<- c(2,3,5,6,8,9)
+  percent_columns<- c(4,7,10)
+  
+  # Basics of output Spreadsheet
+  hs <- createStyle(
+    fontColour = "black",
+    border = "bottom",
+    fgFill = "#00a7a0",
+    halign = "center",
+    valign = "center",
+    textDecoration = "bold"
+  )
+  
+  ns <- createStyle(
+    fontName = "Poppins",
+    fontColour = "black",
+    fontSize = 11,
+    halign = "left",
+    valign = "center",
+  )
+  
+  # Styles for Center Names
+  rs <- createStyle(textDecoration = "bold", indent = 0)
+  cos <- createStyle(indent = 1)
+  cns <- createStyle(indent = 2)
+  
+  # Styles for Columns
+  pct_fmt <- createStyle(numFmt = "0%", halign = "center")
+  num_fmt <- createStyle(numFmt = "#,##0", halign = "center")
+  centerStyle <- createStyle(halign = "center")
+  
+  wb <- loadWorkbook("input-data/population_hct_metadata.xlsx")
+  analysis_years <- paste(min_yr, max_yr, sep = ",")
+  
+  # Set Font Style
+  addStyle(wb = wb, sheet = "Notes", style = ns, rows = 1:2, cols = 2)
+  
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = analysis_years,
+    xy = c(2,1))
+  
+  writeData(
+    wb = wb,
+    sheet = "Notes",
+    x = Sys.Date(),
+    xy = c(2,2))
+  
+  for (m in metrics) {
+    
+    # Write the Variable Names in Row # 1
+    writeData(wb, sheet = m, x = "Geography", xy = c(1,1))
+    writeData(wb, sheet = m, x = as.character(min_yr), xy = c(2,1))
+    mergeCells(wb, sheet = m, rows = 1, cols = 2:4)
+    writeData(wb, sheet = m, x = as.character(max_yr), xy = c(5,1))
+    mergeCells(wb, sheet = m, rows = 1, cols = 5:7)
+    writeData(wb, sheet = m, x = "Change", xy = c(8,1))
+    mergeCells(wb, sheet = m, rows = 1, cols = 8:10)
+    
+    # Write the Data Headings (Estimate, MoE, Share, Share MoE)
+    for(j in 1:length(title_row)) {
+      writeData(wb, sheet = m, x = title_row[[j]], xy = c(j+1,2))
+    }
+    
+    # Write data without the column headings
+    writeData(wb, sheet = m, x = tbl |> filter(metric == m) |> select(-"metric"), colNames = FALSE, xy = c(1,3))
+    
+    # Merge the Geography Title
+    mergeCells(wb, sheet = m, rows = 1:2, cols = 1)
+    
+    # Set width for Column #1 to 45
+    setColWidths(wb, sheet = m, cols = 1:1, widths = 45)
+    
+    # Set all other column widths to 10
+    setColWidths(wb, sheet = m, cols = 2:length(tbl |> filter(metric == m)), widths = 10)
+    
+    # Center Data columns, not the first column
+    for(r in 1:(num_rows+2)) {
+      addStyle(wb, sheet = m, style=centerStyle, rows = r, cols = 2:num_cols)
+    }
+    
+    # Make Estimate and MoE columns numeric with 1000s seperator
+    for(r in 3:(num_rows+2)) {
+      for(c in numeric_columns) {
+        addStyle(wb, sheet = m, style=num_fmt, rows = r, cols = c)
+      }
+    }
+    
+    # Make Share and Share MoE columns percentages with 1 decimal place
+    for(r in 3:(num_rows+2)) {
+      for(c in percent_columns) {
+        addStyle(wb, sheet = m, style=pct_fmt, rows = r, cols = c)
+      }
+    }
+    
+    # Freeze Panes starting with Row 3
+    freezePane(wb, sheet = m, firstActiveRow = 3)
+    
+    # RGC Region Headings
+    addStyle(wb, sheet = m, style=rs, rows = 3, cols = 1)
+    
+    # RGC King County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 4, cols = 1)
+    
+    # RGC King County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 5:23, cols = 1)
+    
+    # RGC Kitsap County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 24, cols = 1)
+    
+    # RGC Kitsap County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 25:26, cols = 1)
+    
+    # RGC Pierce County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 27, cols = 1)
+    
+    # RGC Pierce County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 28:33, cols = 1)
+    
+    # RGC Snohomish County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 34, cols = 1)
+    
+    # RGC Snohomomish County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 35:37, cols = 1)
+    
+    # RGC Type Headings
+    addStyle(wb, sheet = m, style=cos, rows = 38:40, cols = 1)
+    
+    # MIC Region Headings
+    addStyle(wb, sheet = m, style=rs, rows = 41, cols = 1)
+    
+    # MIC King County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 42, cols = 1)
+    
+    # MIC King County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 43:46, cols = 1)
+    
+    # MIC Kitsap County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 47, cols = 1)
+    
+    # MIC Kitsap County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 48, cols = 1)
+    
+    # MIC Pierce County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 49, cols = 1)
+    
+    # MIC Pierce County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 50:52, cols = 1)
+    
+    # MIC Snohomish County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 53, cols = 1)
+    
+    # MIC Snohomomish County Center Headings
+    addStyle(wb, sheet = m, style=cns, rows = 54:55, cols = 1)
+    
+    # MIC Type Headings
+    addStyle(wb, sheet = m, style=cos, rows = 56:58, cols = 1)
+    
+    # Region Headings
+    addStyle(wb, sheet = m, style=rs, rows = 59, cols = 1)
+    
+    # Region County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 60:63, cols = 1)
+    
+    # UGA Headings
+    addStyle(wb, sheet = m, style=rs, rows = 64, cols = 1)
+    
+    # UGA County Headings
+    addStyle(wb, sheet = m, style=cos, rows = 65:68, cols = 1)
+    
+  }
+  
+  # Write final workbook
+  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, ".xlsx"), overwrite = TRUE)
+  
+}
+
+# Blockgroup Split from Elmer ---------------------------------------------
 
 generate_blockgroup_splits <- function(y) {
   
@@ -553,4 +1343,33 @@ generate_blockgroup_splits <- function(y) {
   
 }
 
+centers_estimate_from_bg <- function(split_df, estimate_df, center_type, split_type, center_name) {
+  
+  # Filter Blockgroup Splits to Center Name
+  t <- split_df |> 
+    filter(planning_geog_type == center_type & planning_geog == center_name) |>
+    select(year = "ofm_estimate_year", geography = "data_geog", name = "planning_geog", split_share = all_of(split_type)) 
+  
+  d <- estimate_df |> select("year","geography", "grouping", "metric", "estimate", "moe")
+  
+  # Proportion Estimates and MoE for each block group in center by split share and aggreagate to center
+  c <- left_join(t, d, by=c("year", "geography"), relationship = "many-to-many") |>
+    mutate(center_estimate = estimate*split_share, center_moe = moe*split_share) |>
+    group_by(year, name, grouping, metric) |>
+    summarise(estimate = round(sum(center_estimate),0), moe = round(moe_sum(moe=center_moe, estimate=center_estimate),0)) |>
+    as_tibble() |>
+    mutate(center_boundary = center_type)
+  
+  # Calculate Shares of Total Population, Households or Housing Units
+  totals <- c |>
+    filter(grouping == "Total") |>
+    select("name", "year", "metric", total="estimate")
+  
+  c <- left_join(c, totals, by=c("name", "year", "metric")) |>
+    mutate(share = estimate / total, share_moe = moe / total) |>
+    select(-"total")
+  
+  return(c)
+  
+}
 

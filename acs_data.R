@@ -128,10 +128,10 @@ if (download_census_data == "Yes") {
 
 # Final Data Summary ------------------------------------------------------
 
-# Round data formuse in report
+# Round data for use in report
 centers_acs_data <- centers_acs_data |> mutate(estimate = round(estimate, -1), moe = round(moe, -1))
 
 # Create summary workbooks for each center
 for (m in unique(centers_acs_data$metric)) {
-  summary_table_creation(census_metric=m, census_data=centers_acs_data)
+  acs_summary_table_creation(census_metric=m, census_data=centers_acs_data)
 }
