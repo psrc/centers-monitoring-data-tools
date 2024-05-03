@@ -23,12 +23,9 @@ api_years <- c(2022)
 ofm_years <- c(2010, 2023)
 
 # Make sure these match the boundary definition you want the data to be based on
-rgc_title <- "Regional Growth Center (12/12/2023)"
-mic_title <- "MIC (1/5/2024)"
+rgc_title <- "Regional Growth Center (4/23/2024)"
+mic_title <- "MIC (4/23/2024)"
 rgeo_title <- "Regional Geography Class (2022 RTP)"
-
-elmer_rgc_column <- "regional_growth_center_2023_12_12"
-elmer_mic_column <- "manufacturing_industrial_center_2024_01_05"
 
 # Update Census Data or use currently processed data
 download_census_data <- "No"

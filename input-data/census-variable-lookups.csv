@@ -91,13 +91,13 @@ Tenure,B25003,2,Owner,Owner,1
 Tenure,B25003,3,Renter,Renter,2
 Housing Type,B25024,1,Total,Total,6
 Housing Type,B25024,2,"1, detached",SF detached,1
-Housing Type,B25024,3,"1, attached",Moderate-low density,2
-Housing Type,B25024,4,2,Moderate-low density,2
-Housing Type,B25024,5,3 or 4,Moderate-low density,2
-Housing Type,B25024,6,5 To 9 Years,Moderate-low density,2
-Housing Type,B25024,7,10 to 19,Moderate-high density,3
-Housing Type,B25024,8,20 to 49,High density,4
-Housing Type,B25024,9,50 or more,High density,4
+Housing Type,B25024,3,"1, attached",Moderate-low density ( attached SF to 9 units),2
+Housing Type,B25024,4,2,Moderate-low density ( attached SF to 9 units),2
+Housing Type,B25024,5,3 or 4,Moderate-low density ( attached SF to 9 units),2
+Housing Type,B25024,6,5 to 9,Moderate-low density ( attached SF to 9 units),2
+Housing Type,B25024,7,10 to 19,Moderate-high density (10 to 19 untis),3
+Housing Type,B25024,8,20 to 49,High density (more than 20 units),4
+Housing Type,B25024,9,50 or more,High density (more than 20 units),4
 Housing Type,B25024,10,Mobile Home,Other,5
 Housing Type,B25024,11,"Boat, RV, Van, etc",Other,5
 Renter Cost Burden,B25070,1,Total,Total,5

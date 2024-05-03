@@ -1,3 +1,160 @@
+# WTN Data for Centers ----------------------------------------------------
+process_cardiovascular_data_for_centers <- function(estimate_df=tract_data) {
+  
+  # Region
+  c <- estimate_df |> 
+    drop_na() |>
+    group_by(year) |>
+    summarise(cardiovascular_rate = sum(cardiovascular_estimate), lower_ci = sum(cardiovascular_lower) , upper_ci = sum(cardiovascular_upper), population = sum(population)) |>
+    as_tibble() |>
+    mutate(cardiovascular_rate = cardiovascular_rate / (population/100000),
+           lower_ci = lower_ci / (population/100000),
+           upper_ci = upper_ci / (population/100000),
+           center_boundary = "Region",
+           name = "Region Total") |>
+    select(-"population")
+  
+  # County
+  county <- estimate_df |> 
+    drop_na() |>
+    group_by(year, name) |>
+    summarise(cardiovascular_rate = sum(cardiovascular_estimate), lower_ci = sum(cardiovascular_lower) , upper_ci = sum(cardiovascular_upper), population = sum(population)) |>
+    as_tibble() |>
+    mutate(cardiovascular_rate = cardiovascular_rate / (population/100000),
+           lower_ci = lower_ci / (population/100000),
+           upper_ci = upper_ci / (population/100000),
+           center_boundary = "County") |>
+    select(-"population")
+  
+  c <- bind_rows(c, county)
+  
+  # Regional Growth Centers
+  for(center in rgc_names) {
+    
+    df <- centers_estimate_from_wtn_cardio(estimate_df = estimate_df, center_type = rgc_title, center_name=center)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  # Manufacturing and Industrial Centers
+  for(center in mic_names) {
+    
+    df <- centers_estimate_from_wtn_cardio(estimate_df = estimate_df, center_type = mic_title, center_name=center)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  # Summarise Data by Urban Growth Area
+  for(uga in uga_names) {
+    
+    df <- centers_estimate_from_wtn_cardio(estimate_df = estimate_df, center_type = rgeo_title, center_name=uga)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  c <- c |> 
+    pivot_wider(names_from = year, 
+                values_from = c(cardiovascular_rate, lower_ci, upper_ci),
+                names_sep = ": ",
+                names_sort = FALSE) |>
+    mutate(name = factor(name, levels = all_names)) |> 
+    arrange(name) |>
+    select(-"center_boundary")
+  
+  return(c)
+  
+}
+
+process_life_expectancy_data_for_centers <- function(estimate_df=tract_data, wtn_metric) {
+  
+  # Region
+  c <- estimate_df |> 
+    mutate(center_estimate = .data[[wtn_metric]] * population) |>
+    mutate(center_lower = lower_ci * population) |>
+    mutate(center_upper = upper_ci * population) |>
+    select("year", geography = "geoid", "center_estimate", "center_lower", "center_upper", center_population = "population") |>
+    drop_na()
+  
+  c <- c |>
+    group_by(year) |>
+    summarise(estimate = sum(center_estimate), lower_ci = sum(center_lower), upper_ci = sum(center_upper), population = sum(center_population)) |>
+    as_tibble() |>
+    mutate(estimate = round(estimate/population, 1),
+           lower_ci = round(lower_ci/population, 1),
+           upper_ci = round(upper_ci/population, 1),
+           center_boundary = "Region",
+           name = "Region Total") |>
+    select(-"population")
+  
+  # County
+  county <- estimate_df |> 
+    mutate(name = case_when(
+      str_detect(geoid, "53033") ~ "King County Total",
+      str_detect(geoid, "53035") ~ "Kitsap County Total",
+      str_detect(geoid, "53053") ~ "Pierce County Total",
+      str_detect(geoid, "53061") ~ "Snohomish County Total")) |>
+    mutate(center_estimate = .data[[wtn_metric]] * population) |>
+    mutate(center_lower = lower_ci * population) |>
+    mutate(center_upper = upper_ci * population) |>
+    select("year", "name", "center_estimate", "center_lower", "center_upper", center_population = "population") |>
+    drop_na()
+  
+  county <- county |>
+    group_by(year, name) |>
+    summarise(estimate = sum(center_estimate), lower_ci = sum(center_lower), upper_ci = sum(center_upper), population = sum(center_population)) |>
+    as_tibble() |>
+    mutate(estimate = round(estimate/population, 1),
+           lower_ci = round(lower_ci/population, 1),
+           upper_ci = round(upper_ci/population, 1),
+           center_boundary = "County") |>
+    select(-"population")
+  
+  c <- bind_rows(c, county)
+  
+  # Regional Growth Centers
+  for(center in rgc_names) {
+    
+    df <- centers_estimate_from_wtn(estimate_df = estimate_df, center_type = rgc_title, center_name=center, wtn_metric = wtn_metric)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  # Manufacturing and Industrial Centers
+  for(center in mic_names) {
+    
+    df <- centers_estimate_from_wtn(estimate_df = estimate_df, center_type = mic_title, center_name=center, wtn_metric = wtn_metric)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  # Summarise Data by Urban Growth Area
+  for(uga in uga_names) {
+    
+    df <- centers_estimate_from_wtn(estimate_df = estimate_df, center_type = rgeo_title, center_name=uga, wtn_metric = wtn_metric)
+    c <- bind_rows(c, df)
+    rm(df)
+    
+  }
+  
+  c <- c |> 
+    pivot_wider(names_from = year, 
+                values_from = c(estimate, lower_ci, upper_ci),
+                names_sep = ": ",
+                names_sort = FALSE) |>
+    mutate(name = factor(name, levels = all_names)) |> 
+    arrange(name) |>
+    select(-"center_boundary")
+  
+  return(c)
+  
+}
+
+
 # ACS Data for Centers ----------------------------------------------------
   
 process_acs_data_for_centers <-function(variable_lookup = "census-variable-lookups", splits = blockgroup_splits, census_metric, split_variable) {
@@ -838,7 +995,7 @@ create_acs_summary_spreadsheet <- function(min_yr_data, max_yr_data, acs_metric_
 
   }
   
-  saveWorkbook(wb, file = paste0("output-data/metric_", acs_metric_ids, ".xlsx"), overwrite = TRUE)
+  saveWorkbook(wb, file = paste0("output-data/metric_", acs_metric_ids, "_new.xlsx"), overwrite = TRUE)
 }
 
 acs_summary_table_creation <- function(census_metric, census_data=centers_acs_data) {
@@ -854,7 +1011,8 @@ acs_summary_table_creation <- function(census_metric, census_data=centers_acs_da
   min_yr <- min(yrs)
   max_yr <- max(yrs)
   yr1 <- tbl |> select("name") |> mutate(year = min_yr) |> distinct() |> arrange(name)
-  yr2 <- tbl |> select("name") |> mutate(year = max_yr) |>distinct() |> arrange(name)
+  yr2 <- tbl |> select("name") |> mutate(year = max_yr) |> distinct() |> arrange(name)
+  
   for (v in vars) {
     # Minimum Year
     t <- tbl |>
@@ -1065,7 +1223,7 @@ create_ofm_summary_spreadsheet <- function(tbl, metric_ids) {
   addStyle(wb, sheet = "Data", style=cos, rows = 65:68, cols = 1)
   
   # Write fina workbook
-  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, ".xlsx"), overwrite = TRUE)
+  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, "_new.xlsx"), overwrite = TRUE)
   
 }
 
@@ -1256,7 +1414,7 @@ create_ofm_hct_summary_spreadsheet <- function(tbl, metric_ids, metrics=c("Popul
   }
   
   # Write final workbook
-  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, ".xlsx"), overwrite = TRUE)
+  saveWorkbook(wb, file = paste0("output-data/metric_", metric_ids, "_new.xlsx"), overwrite = TRUE)
   
 }
 
@@ -1373,3 +1531,150 @@ centers_estimate_from_bg <- function(split_df, estimate_df, center_type, split_t
   
 }
 
+generate_tract_splits <- function(y) {
+  
+  if (y >=2020) {
+    ofm_vin <- 2022
+    geog_yr <- 'tract20'
+    
+  } else {
+    ofm_vin <- 2020
+    geog_yr <- 'tract10'}
+  
+  if (y >=2018) {parcel_yr <- 2018} else {parcel_yr <- 2014}
+  
+  # Regional Growth Centers 
+  print(str_glue("Getting Tract splits from Elmer for {geog_yr} for {rgc_title} for the year {y}"))
+  q <- paste0("SELECT * FROM general.get_geography_splits('", geog_yr , "', '", rgc_title, "', ", y, ", ", ofm_vin,", ", parcel_yr,")")
+  
+  rgc_indvidual <- get_query(sql = q, db_name = "Elmer") |> 
+    filter(planning_geog != "not in regional growth center") |> 
+    mutate(planning_geog = str_replace_all(planning_geog, "Greater Downtown Kirkland", "Kirkland Greater Downtown"))
+  
+  rgc_all <- rgc_indvidual |> mutate(planning_geog = "Regional Growth Centers")
+  
+  rgc_county <- rgc_indvidual |> mutate(planning_geog = case_when(
+    (str_detect(data_geog, "53033")) ~ "King County RGCs",
+    (str_detect(data_geog, "53035")) ~ "Kitsap County RGCs",
+    (str_detect(data_geog, "53053")) ~ "Pierce County RGCs",
+    (str_detect(data_geog, "53061")) ~ "Snohomish County RGCs"))
+  
+  rgc_type <- rgc_indvidual |> mutate(planning_geog = case_when(
+    (planning_geog %in% rgc_metro) ~ "Metro Growth Centers",
+    (planning_geog %in% rgc_urban) ~ "Urban Growth Centers"))  
+  
+  rgc_not <- get_query(sql = q, db_name = "Elmer") |> 
+    filter(planning_geog == "not in regional growth center") |> 
+    mutate(planning_geog = "Not in a Regional Growth Center")
+  
+  # Manufacturing Industrial Centers
+  print(str_glue("Getting Tract splits from Elmer for {geog_yr} for {mic_title} for the year {y}"))
+  q <- paste0("SELECT * FROM general.get_geography_splits('", geog_yr , "', '", mic_title, "', ", y, ", ", ofm_vin,", ", parcel_yr,")")
+  
+  mic_indvidual <- get_query(sql = q, db_name = "Elmer") |> 
+    filter(planning_geog != "not in MIC") |>
+    mutate(planning_geog = str_replace_all(planning_geog, "Puget Sound Industrial Center- Bremerton", "Puget Sound Industrial Center - Bremerton"))
+  
+  mic_all <- mic_indvidual |> mutate(planning_geog = "Manufacturing Industrial Centers")
+  
+  mic_county <- mic_indvidual |> mutate(planning_geog = case_when(
+    (str_detect(data_geog, "53033")) ~ "King County MICs",
+    (str_detect(data_geog, "53035")) ~ "Kitsap County MICs",
+    (str_detect(data_geog, "53053")) ~ "Pierce County MICs",
+    (str_detect(data_geog, "53061")) ~ "Snohomish County MICs"))
+  
+  mic_type <- mic_indvidual |> mutate(planning_geog = case_when(
+    (planning_geog %in% mic_employment) ~ "Industrial Employment Centers",
+    (planning_geog %in% mic_growth) ~ "Industrial Growth Centers")) 
+  
+  mic_not <- get_query(sql = q, db_name = "Elmer") |> 
+    filter(planning_geog == "not in MIC") |> 
+    mutate(planning_geog = "Not in a Manufacturing Industrial Centers")
+  
+  # Urban Growth Area
+  print(str_glue("Getting Tract splits from Elmer for {geog_yr} for {rgeo_title} for the year {y}"))
+  q <- paste0("SELECT * FROM general.get_geography_splits('", geog_yr , "', '", rgeo_title, "', ", y, ", ", ofm_vin,", ", parcel_yr,")")
+  
+  uga_all <- get_query(sql = q, db_name = "Elmer") |> filter(planning_geog != "Rural") |> mutate(planning_geog = "UGA Total")
+  
+  uga_county <- uga_all |>
+    mutate(planning_geog = case_when(
+      (str_detect(data_geog, "53033")) ~ "King County UGA",
+      (str_detect(data_geog, "53035")) ~ "Kitsap County UGA",
+      (str_detect(data_geog, "53053")) ~ "Pierce County UGA",
+      (str_detect(data_geog, "53061")) ~ "Snohomish County UGA"))
+  
+  splits <- bind_rows(rgc_indvidual, rgc_all, rgc_county, rgc_type, rgc_not,
+                      mic_indvidual, mic_all, mic_county, mic_type, mic_not, 
+                      uga_all, uga_county)
+  
+  return(splits)
+  
+}
+
+centers_estimate_from_wtn <- function(split_df=tract_splits, estimate_df, center_type, split_type="percent_of_total_pop", center_name, wtn_metric, dec=1) {
+  
+  # Filter Tract Splits to Center Name
+  t <- split_df |> 
+    filter(planning_geog_type == center_type & planning_geog == center_name) |>
+    select(year = "ofm_estimate_year", geography = "data_geog", name = "planning_geog", split_share = all_of(split_type)) 
+  
+  # Weight the WTN metrics by the population
+  d <- estimate_df |> 
+    mutate(weighted_estimate = .data[[wtn_metric]] * population) |>
+    mutate(weighted_lower_ci = lower_ci * population) |>
+    mutate(weighted_upper_ci = upper_ci * population) |>
+    select("year", geography = "geoid", "weighted_estimate", "weighted_lower_ci", "weighted_upper_ci", "population") |>
+    drop_na()
+  
+  # Proportion Estimates and Confidence Intervals for each tract in center by split share and aggregate to center
+  c <- left_join(t, d, by=c("year", "geography"), relationship = "many-to-many") |>
+    drop_na() |>
+    mutate(center_estimate = weighted_estimate*split_share, 
+           center_lower = weighted_lower_ci*split_share, 
+           center_upper = weighted_upper_ci*split_share,
+           center_population = population*split_share) |>
+    group_by(year, name) |>
+    summarise(estimate = sum(center_estimate), lower_ci = sum(center_lower), upper_ci = sum(center_upper), population = sum(center_population)) |>
+    as_tibble() |>
+    mutate(estimate = round(estimate/population, dec),
+           lower_ci = round(lower_ci/population, dec),
+           upper_ci = round(upper_ci/population, dec),
+           center_boundary = center_type) |>
+    select(-"population")
+  
+  return(c)
+  
+}
+
+centers_estimate_from_wtn_cardio <- function(split_df=tract_splits, estimate_df, center_type, split_type="percent_of_total_pop", center_name, dec=2) {
+  
+  # Filter Tract Splits to Center Name
+  t <- split_df |> 
+    filter(planning_geog_type == center_type & planning_geog == center_name) |>
+    select(year = "ofm_estimate_year", geography = "data_geog", name = "planning_geog", split_share = all_of(split_type)) 
+  
+  # Weight the WTN metrics by the population
+  d <- estimate_df |> 
+    drop_na() |>
+    select(geography = "geoid", "year", "cardiovascular_estimate", "cardiovascular_lower", "cardiovascular_upper", "population")
+  
+  # Proportion Estimates and Confidence Intervals for each tract in center by split share and aggregate to center
+  c <- left_join(t, d, by=c("year", "geography"), relationship = "many-to-many") |>
+    drop_na() |>
+    mutate(center_estimate = cardiovascular_estimate*split_share, 
+           center_lower = cardiovascular_lower*split_share, 
+           center_upper = cardiovascular_upper*split_share,
+           center_population = population*split_share) |>
+    group_by(year, name) |>
+    summarise(cardiovascular_rate = sum(center_estimate), lower_ci = sum(center_lower), upper_ci = sum(center_upper), population = sum(center_population)) |>
+    as_tibble() |>
+    mutate(cardiovascular_rate = round(cardiovascular_rate / (population/100000), dec),
+           lower_ci = round(lower_ci / (population/100000), dec),
+           upper_ci = round(upper_ci / (population/100000), dec),
+           center_boundary = center_type) |>
+    select(-"population")
+  
+  return(c)
+  
+}

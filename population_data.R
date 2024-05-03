@@ -16,8 +16,8 @@ options(dplyr.summarise.inform = FALSE)
 ofm_years <- c(2010, 2023)
 
 # Make sure these match the boundary definition you want the data to be based on
-rgc_title <- "regional_growth_center_2023_12_12"
-mic_title <- "manufacturing_industrial_center_2024_01_05"
+rgc_title <- "regional_growth_center_2024_04_23"
+mic_title <- "manufacturing_industrial_center_2024_04_23"
 rgeo_title <- "regional_geography_class_2022"
 hct_title <- "hct_station_area_vision_2050"
 
@@ -89,7 +89,3 @@ create_ofm_summary_spreadsheet(tbl = population_housing, metric_ids = "1")
 # Population and Housing Data near HCT and Centers ------------------------
 population_housing_hct <- process_ofm_hct_data_for_centers(yrs=ofm_years)
 create_ofm_hct_summary_spreadsheet(tbl=population_housing_hct, metric_ids = "11")
- 
-  
-  
-  
